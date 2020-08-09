@@ -8,10 +8,9 @@ Once we get the domain admin priviledges, how can be make sure to keep those pri
 4. Skeleton Key
 5. DSRM
 6. Custom SSP
-7. Domain Persistence using ACLs - AdminSDHolder
-8. Persistence using ACLs - Rights Abuser
-9. Persistence using ACLs - Security Descriptors
-10. Persistence using ACLs - Security Descriptors - Remote Registry
+7. Domain Persistence using ACLs - AdminSDHolder & Rights Abuser
+8. Persistence using ACLs - Security Descriptors
+9. Persistence using ACLs - Security Descriptors - Remote Registry
 
 We will be exploiting Kerberos for this:
 
